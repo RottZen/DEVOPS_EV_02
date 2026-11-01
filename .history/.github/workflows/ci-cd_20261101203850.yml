@@ -1,0 +1,135 @@
+name: CI/CD Pipeline - ms-vehiculos
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # ========================================================
+  # FASE 1: Pruebas Unitarias y Cobertura (IE2)
+  # ========================================================
+  unit-tests:
+    name: Pruebas Unitarias y JaCoCo
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar codigo fuente
+        uses: actions/checkout@v4
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Ejecutar pruebas unitarias con JUnit
+        run: mvn clean test
+
+      - name: Subir reporte de cobertura JaCoCo como artefacto
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-coverage-report
+          path: target/site/jacoco/
+          retention-days: 7
+
+  # ========================================================
+  # FASE 2: Escaneo de Seguridad y Bloqueo (IE3)
+  # ========================================================
+  security-scan:
+    name: Analisis de Seguridad con Snyk
+    needs: unit-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar codigo fuente
+        uses: actions/checkout@v4
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Instalar Snyk CLI oficial
+        uses: snyk/actions/setup@master
+
+      - name: Autenticar y ejecutar escaneo de seguridad
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk auth "$SNYK_TOKEN"
+          chmod +x mvnw
+          snyk test --maven-aggregate-project --severity-threshold=high -d
+
+  # ========================================================
+  # FASE 3: Contenerización y Validación Docker (IE1 / IE5)
+  # ========================================================
+  docker-build:
+    name: Construccion y Validacion Docker
+    needs: security-scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar codigo fuente
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construir imagen Docker Multi-Stage
+        run: |
+          docker build -t ms-vehiculos:${{ github.sha }} .
+          docker tag ms-vehiculos:${{ github.sha }} ms-vehiculos:latest
+
+      - name: Probar orquestacion con Docker Compose en runner
+        run: |
+          docker compose up -d --build
+          sleep 20
+          docker compose ps
+          docker compose down
+
+  # ========================================================
+  # FASE 4: Despliegue en la Nube (AWS EC2 / Cloud Simulado) (IE4)
+  # ========================================================
+  deploy:
+    name: Despliegue Continuo (CD)
+    needs: docker-build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar codigo fuente
+        uses: actions/checkout@v4
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Generar artefacto .jar
+        run: mvn clean package -DskipTests
+
+      - name: Transferir binarios a EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "target/*.jar,Dockerfile"
+          target: "/home/${{ secrets.EC2_USER }}/"
+
+      - name: Orquestar contenedores en EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker compose down || true
+            docker compose up -d --build

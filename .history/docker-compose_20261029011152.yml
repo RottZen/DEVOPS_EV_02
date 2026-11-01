@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # ========================================================
+  # Servicio 1: Base de Datos MySQL
+  # ========================================================
+  mysql-db:
+    image: mysql:8.0
+    container_name: mysql-vehiculos
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: vehiculos
+    ports:
+      - "3307:3306" # Mapeamos puerto 3307 por si las moscas
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - devops-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ========================================================
+  # Servicio 2: Microservicio ms-vehiculos (Spring Boot)
+  # ========================================================
+  ms-vehiculos:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ms-vehiculos-app
+    restart: unless-stopped
+    ports:
+      - "9004:9004"
+    environment:
+      - DB_URL=jdbc:mysql://mysql-db:3306/vehiculos?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      - DB_USERNAME=root
+      - DB_PASSWORD=rootpassword
+      - SERVER_PORT=9004
+      - SPRING_PROFILES_ACTIVE=prod
+    depends_on:
+      mysql-db:
+        condition: service_healthy # heathcheck para esperar a que la base de datos esté lista
+    networks:
+      - devops-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+# Red interna aislada para comunicación entre servicios
+networks:
+  devops-net:
+    driver: bridge
+
+# Volumen persistente para que los datos no se pierdan
+volumes:
+  mysql_data:
+    driver: local
