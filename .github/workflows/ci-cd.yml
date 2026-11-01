@@ -63,7 +63,8 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           snyk auth "$SNYK_TOKEN"
-          snyk test --severity-threshold=high
+          chmod +x mvnw
+          snyk test --maven-aggregate-project --severity-threshold=high -d
 
   # ========================================================
   # FASE 3: Contenerización y Validación Docker (IE1 / IE5)
