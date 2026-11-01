@@ -55,12 +55,15 @@ jobs:
           java-version: '21'
           cache: 'maven'
 
-      - name: Instalar y ejecutar escaneo de Snyk
-        uses: snyk/actions/maven@master
+      - name: Instalar Snyk CLI oficial
+        uses: snyk/actions/setup@master
+
+      - name: Autenticar y ejecutar escaneo de seguridad
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high
+        run: |
+          snyk auth "$SNYK_TOKEN"
+          snyk test --severity-threshold=high
 
   # ========================================================
   # FASE 3: Contenerización y Validación Docker (IE1 / IE5)
