@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # Monitoreo continuo de dependencias
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Monitoreo de seguridad de la imagen base de Docker
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
